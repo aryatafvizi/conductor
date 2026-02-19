@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="100%" stop-color="#764ba2"/>
+    </linearGradient>
+    <linearGradient id="baton" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e0e0"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="56" fill="url(#bg)"/>
+  <!-- Conductor baton -->
+  <line x1="35" y1="85" x2="85" y2="25" stroke="url(#baton)" stroke-width="4" stroke-linecap="round"/>
+  <!-- Baton tip -->
+  <circle cx="85" cy="25" r="5" fill="white"/>
+  <!-- Music notes / signal waves -->
+  <path d="M 25 40 Q 30 35, 35 40 Q 40 45, 45 40" stroke="rgba(255,255,255,0.6)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M 20 52 Q 27 45, 34 52 Q 41 59, 48 52" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M 70 65 Q 77 58, 84 65 Q 91 72, 98 65" stroke="rgba(255,255,255,0.6)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M 65 78 Q 74 70, 83 78 Q 92 86, 100 78" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- Agent dots -->
+  <circle cx="30" cy="70" r="4" fill="rgba(255,255,255,0.8)"/>
+  <circle cx="45" cy="60" r="4" fill="rgba(255,255,255,0.8)"/>
+  <circle cx="60" cy="75" r="4" fill="rgba(255,255,255,0.8)"/>
+</svg>

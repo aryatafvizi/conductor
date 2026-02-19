@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conductor — Agent Orchestration</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>🎼 Conductor</h1>
+            <span class="connection-status" id="conn-status">Connecting…</span>
+        </div>
+        <div class="header-right">
+            <button class="btn btn-danger" id="btn-kill-all" title="Kill all agents">🔴 STOP ALL</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Top Row: Quota + PR Tracker -->
+        <section class="top-row">
+            <div class="card quota-card" id="quota-panel">
+                <h2>📊 Quota</h2>
+                <div class="quota-bars">
+                    <div class="quota-item">
+                        <label>Agents <span id="q-agents-text">0/200</span></label>
+                        <div class="progress-bar"><div class="progress-fill" id="q-agents-bar"></div></div>
+                    </div>
+                    <div class="quota-item">
+                        <label>Prompts <span id="q-prompts-text">0/1500</span></label>
+                        <div class="progress-bar"><div class="progress-fill" id="q-prompts-bar"></div></div>
+                    </div>
+                    <div class="quota-item">
+                        <label>Concurrent <span id="q-concurrent-text">0/3</span></label>
+                        <div class="progress-bar"><div class="progress-fill" id="q-concurrent-bar"></div></div>
+                    </div>
+                </div>
+                <div class="quota-footer">
+                    <span id="q-paused" class="badge badge-ok">Active</span>
+                    <span id="q-reset">Reset in: —</span>
+                </div>
+            </div>
+
+            <div class="card pr-tracker-card" id="pr-panel">
+                <h2>🔄 PR Lifecycle</h2>
+                <div id="pr-list" class="pr-list"></div>
+            </div>
+        </section>
+
+        <!-- Middle Row: Tasks + Agents + Workspaces -->
+        <section class="mid-row">
+            <div class="card" id="tasks-panel">
+                <h2>📋 Tasks <span class="badge" id="task-count">0</span></h2>
+                <div id="tasks-list" class="item-list"></div>
+            </div>
+
+            <div class="card" id="agents-panel">
+                <h2>🤖 Agents <span class="badge" id="agent-count">0</span></h2>
+                <div id="agents-list" class="item-list"></div>
+            </div>
+
+            <div class="card" id="workspaces-panel">
+                <h2>📂 Workspaces</h2>
+                <div id="workspaces-list" class="item-list"></div>
+            </div>
+        </section>
+
+        <!-- Bottom Row: Chat + Logs -->
+        <section class="bottom-row">
+            <div class="card chat-card" id="chat-panel">
+                <h2>💬 Planning Chat</h2>
+                <div class="chat-messages" id="chat-messages"></div>
+                <div class="chat-input-row">
+                    <input type="text" id="chat-input" placeholder="Describe your task…" />
+                    <button class="btn btn-primary" id="btn-chat-send">Send</button>
+                    <button class="btn btn-success" id="btn-chat-approve" disabled>✅ Approve Plan</button>
+                </div>
+            </div>
+
+            <div class="card logs-card" id="logs-panel">
+                <h2>📜 Logs</h2>
+                <div class="log-controls">
+                    <select id="log-level-filter">
+                        <option value="">All Levels</option>
+                        <option value="DEBUG">Debug</option>
+                        <option value="INFO">Info</option>
+                        <option value="WARN">Warn</option>
+                        <option value="ERROR">Error</option>
+                    </select>
+                    <input type="text" id="log-search" placeholder="Search logs…" />
+                </div>
+                <div class="log-entries" id="log-entries"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
