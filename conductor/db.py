@@ -4,12 +4,19 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from pathlib import Path
-from typing import Any
 
 from models import (
-    Agent, AgentStatus, BlockReason, Pipeline, PipelineStatus,
-    PRLifecycle, PRStage, Task, TaskPriority, TaskStatus, Workspace,
+    Agent,
+    AgentStatus,
+    Pipeline,
+    PipelineStatus,
+    PRLifecycle,
+    PRStage,
+    Task,
+    TaskPriority,
+    TaskStatus,
 )
 
 DEFAULT_DB = Path.home() / ".conductor" / "conductor.db"
@@ -99,9 +106,18 @@ def init_db(db_path: Path = DEFAULT_DB) -> None:
             prompts INTEGER DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at REAL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
         CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
         CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+        CREATE INDEX IF NOT EXISTS idx_chat_conv ON chat_messages(conversation_id);
     """)
     conn.commit()
 
@@ -168,6 +184,7 @@ def update_task(task: Task, db_path: Path = DEFAULT_DB) -> None:
 
 def delete_task(task_id: int, db_path: Path = DEFAULT_DB) -> None:
     conn = _get_conn(db_path)
+    conn.execute("DELETE FROM agents WHERE task_id = ?", (task_id,))
     conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     conn.commit()
 
@@ -294,6 +311,12 @@ def update_pr_lifecycle(prl: PRLifecycle, db_path: Path = DEFAULT_DB) -> None:
     conn.commit()
 
 
+def delete_pr_lifecycle(prl_id: int, db_path: Path = DEFAULT_DB) -> None:
+    conn = _get_conn(db_path)
+    conn.execute("DELETE FROM pr_lifecycles WHERE id = ?", (prl_id,))
+    conn.commit()
+
+
 def _row_to_pr_lifecycle(row: sqlite3.Row) -> PRLifecycle:
     return PRLifecycle(
         id=row["id"],
@@ -394,3 +417,113 @@ def increment_quota(
         (date_str, agent_requests, prompts, agent_requests, prompts),
     )
     conn.commit()
+
+
+# ── Chat Persistence ────────────────────────────────────────────────────────
+
+
+def save_chat_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    db_path: Path = DEFAULT_DB,
+) -> None:
+    conn = _get_conn(db_path)
+    conn.execute(
+        "INSERT INTO chat_messages (conversation_id, role, content, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (conversation_id, role, content, time.time()),
+    )
+    conn.commit()
+
+
+def get_chat_history(
+    conversation_id: str,
+    db_path: Path = DEFAULT_DB,
+) -> list[dict[str, str]]:
+    conn = _get_conn(db_path)
+    rows = conn.execute(
+        "SELECT role, content FROM chat_messages "
+        "WHERE conversation_id = ? ORDER BY id",
+        (conversation_id,),
+    ).fetchall()
+    return [{"role": r[0], "content": r[1]} for r in rows]
+
+
+def list_chat_conversations(db_path: Path = DEFAULT_DB) -> list[str]:
+    conn = _get_conn(db_path)
+    rows = conn.execute(
+        "SELECT DISTINCT conversation_id FROM chat_messages ORDER BY conversation_id",
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def delete_chat_history(
+    conversation_id: str,
+    db_path: Path = DEFAULT_DB,
+) -> None:
+    conn = _get_conn(db_path)
+    conn.execute(
+        "DELETE FROM chat_messages WHERE conversation_id = ?",
+        (conversation_id,),
+    )
+    conn.commit()
+
+
+# ── Startup Recovery ────────────────────────────────────────────────────────
+
+
+def recover_stuck_tasks(db_path: Path = DEFAULT_DB) -> int:
+    """Reset tasks/agents stuck in running state after a crash.
+
+    Returns the number of tasks recovered.
+    """
+    conn = _get_conn(db_path)
+
+    # Find tasks stuck in 'running'
+    stuck = conn.execute(
+        "SELECT id, metadata FROM tasks WHERE status = 'running'"
+    ).fetchall()
+
+    if not stuck:
+        return 0
+
+    stuck_ids = []
+    prl_ids = []
+    for row in stuck:
+        stuck_ids.append(row[0])
+        # Extract prl_id from metadata if present
+        try:
+            meta = json.loads(row[1]) if row[1] else {}
+            if "prl_id" in meta:
+                prl_ids.append(meta["prl_id"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Mark stuck tasks as failed
+    conn.executemany(
+        "UPDATE tasks SET status = 'failed', "
+        "completed_at = ?, "
+        "metadata = json_set(COALESCE(metadata, '{}'), '$.recovery_note', "
+        "'Interrupted — conductor restarted while task was running') "
+        "WHERE id = ?",
+        [(time.time(), tid) for tid in stuck_ids],
+    )
+
+    # Clean up any agents that were running
+    conn.execute(
+        "UPDATE agents SET status = 'failed', completed_at = ? "
+        "WHERE status IN ('starting', 'running')",
+        (time.time(),),
+    )
+
+    # Reset associated PR lifecycle stages back to planning
+    if prl_ids:
+        conn.executemany(
+            "UPDATE pr_lifecycles SET stage = 'planning' WHERE id = ?",
+            [(pid,) for pid in prl_ids],
+        )
+
+    conn.commit()
+    return len(stuck_ids)
+

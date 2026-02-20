@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conductor — Agent Orchestration</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
     <header>
         <div class="header-left">
@@ -14,9 +18,23 @@
             <span class="connection-status" id="conn-status">Connecting…</span>
         </div>
         <div class="header-right">
+            <button class="btn btn-ghost" id="btn-settings" title="Model Settings">⚙️ Settings</button>
             <button class="btn btn-danger" id="btn-kill-all" title="Kill all agents">🔴 STOP ALL</button>
         </div>
     </header>
+
+    <div class="settings-panel" id="settings-panel">
+        <div class="settings-inner">
+            <div class="settings-group">
+                <label>💻 Coding Model</label>
+                <select id="model-coding" class="model-select"></select>
+            </div>
+            <div class="settings-group">
+                <label>🧪 Test Model</label>
+                <select id="model-testing" class="model-select"></select>
+            </div>
+        </div>
+    </div>
 
     <main>
         <!-- Top Row: Quota + PR Tracker -->
@@ -26,15 +44,21 @@
                 <div class="quota-bars">
                     <div class="quota-item">
                         <label>Agents <span id="q-agents-text">0/200</span></label>
-                        <div class="progress-bar"><div class="progress-fill" id="q-agents-bar"></div></div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="q-agents-bar"></div>
+                        </div>
                     </div>
                     <div class="quota-item">
                         <label>Prompts <span id="q-prompts-text">0/1500</span></label>
-                        <div class="progress-bar"><div class="progress-fill" id="q-prompts-bar"></div></div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="q-prompts-bar"></div>
+                        </div>
                     </div>
                     <div class="quota-item">
                         <label>Concurrent <span id="q-concurrent-text">0/3</span></label>
-                        <div class="progress-bar"><div class="progress-fill" id="q-concurrent-bar"></div></div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="q-concurrent-bar"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="quota-footer">
@@ -61,6 +85,12 @@
                 <div id="agents-list" class="item-list"></div>
             </div>
 
+            <div class="card" id="diff-panel">
+                <h2>📝 <span id="diff-header-label">CHANGED FILES</span> <span class="badge" id="diff-count">0</span>
+                </h2>
+                <div id="diff-stats" class="item-list"></div>
+            </div>
+
             <div class="card" id="workspaces-panel">
                 <h2>📂 Workspaces</h2>
                 <div id="workspaces-list" class="item-list"></div>
@@ -70,12 +100,24 @@
         <!-- Bottom Row: Chat + Logs -->
         <section class="bottom-row">
             <div class="card chat-card" id="chat-panel">
-                <h2>💬 Planning Chat</h2>
+                <div class="chat-header">
+                    <h2>💬 Planning Chat</h2>
+                    <select id="model-planning" class="model-select model-select-inline"
+                        title="Planning model"></select>
+                </div>
+                <div class="chat-workspace-ctx" id="chat-workspace-ctx">
+                    <span class="ctx-label">No workspace selected — click a workspace above</span>
+                </div>
                 <div class="chat-messages" id="chat-messages"></div>
                 <div class="chat-input-row">
-                    <input type="text" id="chat-input" placeholder="Describe your task…" />
-                    <button class="btn btn-primary" id="btn-chat-send">Send</button>
-                    <button class="btn btn-success" id="btn-chat-approve" disabled>✅ Approve Plan</button>
+                    <textarea id="chat-input" placeholder="Describe your task… (Shift+Enter for new line)"
+                        rows="2"></textarea>
+                    <div class="chat-buttons">
+                        <button class="btn btn-primary" id="btn-chat-send">Send</button>
+                        <button class="btn btn-success" id="btn-chat-approve" disabled>✅ Approve</button>
+                        <button class="btn btn-ghost btn-sm" id="btn-chat-clear" title="Clear chat history">🗑️
+                            Clear</button>
+                    </div>
                 </div>
             </div>
 
@@ -98,4 +140,5 @@
 
     <script src="/static/app.js"></script>
 </body>
+
 </html>

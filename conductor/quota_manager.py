@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import db
 from logger import log_event

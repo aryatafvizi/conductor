@@ -6,10 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from logger import log_event
 from models import Rule, TaskPriority
-
 
 DEFAULT_RULES_PATH = Path.home() / ".conductor" / "rules.yaml"
 

@@ -7,7 +7,11 @@ from typing import Any
 import db
 from logger import log_event
 from models import (
-    PRIORITY_ORDER, BlockReason, Task, TaskPriority, TaskStatus,
+    PRIORITY_ORDER,
+    BlockReason,
+    Task,
+    TaskPriority,
+    TaskStatus,
 )
 
 
@@ -16,6 +20,7 @@ def add_task(
     description: str = "",
     priority: str = "normal",
     branch: str = "",
+    workspace: str = "",
     depends_on: list[int] | None = None,
     pr_number: int | None = None,
     pipeline_id: int | None = None,
@@ -44,6 +49,7 @@ def add_task(
         status=status,
         priority=TaskPriority(priority),
         branch=branch,
+        workspace=workspace,
         depends_on=dep_ids,
         block_reason=block_reason,
         pr_number=pr_number,
@@ -137,6 +143,18 @@ def cancel_task(task_id: int) -> Task | None:
     db.update_task(task)
     log_event("task_manager", "task_cancelled", task_id=task_id)
     return task
+
+
+def delete_task(task_id: int) -> bool:
+    """Delete a task (only if not currently running)."""
+    task = db.get_task(task_id)
+    if task is None:
+        return False
+    if task.status == TaskStatus.RUNNING:
+        return False
+    db.delete_task(task_id)
+    log_event("task_manager", "task_deleted", task_id=task_id)
+    return True
 
 
 def get_ready_tasks() -> list[Task]:

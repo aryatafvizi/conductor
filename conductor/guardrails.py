@@ -78,8 +78,37 @@ class Guardrails:
     # ── Runtime checks ──────────────────────────────────────────────────
 
     def check_agent_output(self, output_line: str) -> dict[str, Any]:
-        """Scan agent output for dangerous operations."""
+        """Scan agent output for dangerous operations.
+
+        Only scans actual shell command executions, not model reasoning text.
+        Stream-json output contains model thinking which may reference
+        dangerous patterns without actually executing them.
+        """
         violations = []
+
+        # Try to parse as JSON (stream-json format)
+        # Only scan actual command execution, not model text
+        text_to_scan = ""
+        try:
+            import json as _json
+            parsed = _json.loads(output_line)
+            # Only scan tool execution output, not model response text
+            if isinstance(parsed, dict):
+                tool_name = parsed.get("tool", "") or parsed.get("name", "")
+                tool_input = parsed.get("input", "") or parsed.get("args", "")
+                # Only scan shell/terminal commands
+                if any(t in str(tool_name).lower() for t in
+                       ("shell", "terminal", "exec", "command", "bash", "run_command")):
+                    text_to_scan = str(tool_input)
+        except (ValueError, TypeError):
+            # Not JSON — likely plain text output, could be a real command
+            # Only scan if it looks like an actual command (starts with $ or >)
+            stripped = output_line.strip()
+            if stripped.startswith("$") or stripped.startswith(">"):
+                text_to_scan = stripped
+
+        if not text_to_scan:
+            return {"violations": [], "should_kill": False}
 
         # Check for force push
         if self.config.block_force_push:
@@ -89,11 +118,11 @@ class Guardrails:
                 r"git\s+push\s+.*--force-with-lease",
             ]
             for pattern in force_push_patterns:
-                if re.search(pattern, output_line, re.IGNORECASE):
+                if re.search(pattern, text_to_scan, re.IGNORECASE):
                     violations.append({
                         "type": "force_push_attempt",
                         "severity": "critical",
-                        "line": output_line[:200],
+                        "line": text_to_scan[:200],
                     })
 
         # Check for dangerous commands
@@ -105,11 +134,11 @@ class Guardrails:
             (r"wget\s+.*\|\s*sh", "pipe_to_shell"),
         ]
         for pattern, violation_type in dangerous_patterns:
-            if re.search(pattern, output_line, re.IGNORECASE):
+            if re.search(pattern, text_to_scan, re.IGNORECASE):
                 violations.append({
                     "type": violation_type,
                     "severity": "critical",
-                    "line": output_line[:200],
+                    "line": text_to_scan[:200],
                 })
 
         if violations:

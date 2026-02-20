@@ -223,8 +223,8 @@ All configuration lives in `~/.conductor/`.
 ### `config.yaml`
 
 ```yaml
-# Workspace discovery
-workspace_pattern: "~/workspace-*"
+# Workspace discovery (any glob pattern)
+workspace_pattern: "~/workspace-*"  # or ~/projects/*, etc.
 
 # GitHub integration
 github:

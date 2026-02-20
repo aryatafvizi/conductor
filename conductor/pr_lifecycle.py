@@ -1,15 +1,15 @@
 """PR Lifecycle Manager — end-to-end PR automation pipeline."""
 from __future__ import annotations
 
-import asyncio
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import db
+import task_manager
 from github_monitor import GitHubMonitor
 from logger import log_event
-from models import PRLifecycle, PRStage, Task, TaskPriority, TaskStatus
-import task_manager
+from models import PRLifecycle, PRStage
 
 
 class PRLifecycleManager:
@@ -66,7 +66,7 @@ class PRLifecycleManager:
         if not prl:
             return None
 
-        old_stage = prl.stage
+
 
         if prl.stage == PRStage.CODING:
             # Coding done → run prechecks

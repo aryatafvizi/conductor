@@ -160,13 +160,33 @@ class TestGuardrails:
     def test_output_scanning(self):
         from guardrails import Guardrails, GuardrailConfig
         g = Guardrails(GuardrailConfig())
-        result = g.check_agent_output("git push --force origin main")
+        # JSON tool call with a dangerous command
+        import json
+        cmd_json = json.dumps({"tool": "shell", "input": "git push --force origin main"})
+        result = g.check_agent_output(cmd_json)
+        assert result["should_kill"] is True
+
+    def test_output_scanning_plain_command(self):
+        from guardrails import Guardrails, GuardrailConfig
+        g = Guardrails(GuardrailConfig())
+        # Plain text command prefixed with $
+        result = g.check_agent_output("$ rm -rf /")
         assert result["should_kill"] is True
 
     def test_safe_output(self):
         from guardrails import Guardrails, GuardrailConfig
         g = Guardrails(GuardrailConfig())
         result = g.check_agent_output("echo hello world")
+        assert result["should_kill"] is False
+
+    def test_model_text_not_scanned(self):
+        """Model reasoning text that mentions dangerous commands should NOT trigger kills."""
+        from guardrails import Guardrails, GuardrailConfig
+        g = Guardrails(GuardrailConfig())
+        import json
+        # Model response text (not a tool call)
+        model_json = json.dumps({"type": "text", "content": "Don't run rm -rf / or git push --force"})
+        result = g.check_agent_output(model_json)
         assert result["should_kill"] is False
 
 

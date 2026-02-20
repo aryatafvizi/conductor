@@ -6,12 +6,12 @@ import os
 import signal
 import time
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
 
 import db
 from guardrails import Guardrails
 from logger import SessionLogger, log_event, log_task_summary
-from models import Agent, AgentStatus, Task, TaskStatus
+from models import Agent, AgentStatus, Task
 from quota_manager import QuotaManager
 from workspace_manager import WorkspaceManager
 
@@ -24,18 +24,31 @@ class AgentManager:
         workspace_mgr: WorkspaceManager,
         quota_mgr: QuotaManager,
         guardrails: Guardrails,
+        config: dict | None = None,
         on_output: Callable[[str, str], None] | None = None,
         on_status_change: Callable[[Agent], None] | None = None,
+        on_diff_stats: Callable[[dict], None] | None = None,
     ) -> None:
         self.workspace_mgr = workspace_mgr
         self.quota_mgr = quota_mgr
         self.guardrails = guardrails
+        self._config = config or {}
         self.agents: dict[str, Agent] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._session_loggers: dict[str, SessionLogger] = {}
         # Callbacks for real-time updates
         self._on_output = on_output         # (agent_id, line) -> None
         self._on_status_change = on_status_change  # (agent) -> None
+        self._on_diff_stats = on_diff_stats  # (stats_dict) -> None
+
+    def _build_agent_env(self) -> dict[str, str]:
+        """Build environment variables for the agent subprocess."""
+        env = {**os.environ, "HOME": os.environ.get("HOME", "")}
+        # Inject API key from config so the gemini CLI can authenticate
+        api_key = self._config.get("gemini_api_key", "")
+        if api_key:
+            env["GEMINI_API_KEY"] = api_key
+        return env
 
     async def spawn_agent(
         self,
@@ -103,9 +116,9 @@ class AgentManager:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=ws.path,
-                env={**os.environ, "HOME": os.environ.get("HOME", "")},
+                env=self._build_agent_env(),
             )
             self._processes[agent_id] = process
             agent.pid = process.pid
@@ -136,21 +149,51 @@ class AgentManager:
             self.workspace_mgr.release(workspace_name)
             return None
 
+    def _broadcast_diff_stats(self, ws_name: str) -> None:
+        """Broadcast current diff stats for a workspace."""
+        if not self._on_diff_stats:
+            return
+        try:
+            stats = self.workspace_mgr.get_diff_stats(ws_name)
+            self._on_diff_stats(stats)
+        except Exception:
+            pass
+
     async def _monitor_agent(self, agent_id: str) -> None:
         """Monitor agent process output and detect completion."""
         agent = self.agents[agent_id]
         process = self._processes[agent_id]
         session = self._session_loggers.get(agent_id)
         task_start = agent.started_at or time.time()
+        last_diff_broadcast = 0.0
 
         try:
             while True:
                 if process.stdout is None:
                     break
 
-                line = await asyncio.wait_for(
-                    process.stdout.readline(), timeout=1.0
-                )
+                try:
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(), timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    # No output for 1s — check if process is still alive
+                    if process.returncode is not None:
+                        break  # Process has exited
+                    # Timeout check even during idle periods
+                    elapsed = time.time() - task_start
+                    if not self.guardrails.check_timeout(elapsed):
+                        log_event("agent_manager", "agent_killed_timeout",
+                                  level="WARN", agent_id=agent_id,
+                                  elapsed_s=elapsed)
+                        await self.kill_agent(agent_id)
+                        return
+                    # Broadcast diff stats during idle periods too
+                    now = time.time()
+                    if now - last_diff_broadcast >= 5.0:
+                        last_diff_broadcast = now
+                        self._broadcast_diff_stats(agent.workspace)
+                    continue
 
                 if not line:
                     # Process ended
@@ -192,8 +235,12 @@ class AgentManager:
                 if self._on_output:
                     self._on_output(agent_id, decoded)
 
-        except asyncio.TimeoutError:
-            pass  # Normal — readline timeout, loop continues
+                # Broadcast diff stats every 5s during agent run
+                now = time.time()
+                if now - last_diff_broadcast >= 5.0:
+                    last_diff_broadcast = now
+                    self._broadcast_diff_stats(agent.workspace)
+
         except asyncio.CancelledError:
             return
         except Exception as e:
@@ -224,24 +271,32 @@ class AgentManager:
         self.quota_mgr.agent_stopped()
 
         # Post-run diff check
-        diff_stats = self.workspace_mgr.get_diff_stats(ws_name)
+        try:
+            diff_stats = self.workspace_mgr.get_diff_stats(ws_name)
+            files_changed = diff_stats.get("total_files", 0)
+            lines_changed = diff_stats.get("total_added", 0) + diff_stats.get("total_removed", 0)
+        except Exception:
+            diff_stats = {}
+            files_changed = 0
+            lines_changed = 0
+
         diff_check = self.guardrails.check_diff_size(
-            diff_stats["files_changed"], diff_stats["lines_changed"]
+            files_changed, lines_changed
         )
 
         if session:
             session.log_final_diff(diff_stats.get("diff", ""))
             session.log_timeline_event("agent_completed",
                                        exit_code=return_code,
-                                       files_changed=diff_stats["files_changed"],
-                                       lines_changed=diff_stats["lines_changed"])
+                                       files_changed=files_changed,
+                                       lines_changed=lines_changed)
             session.write_summary({
                 "task_id": agent.task_id,
                 "agent_id": agent_id,
                 "exit_code": return_code,
                 "status": agent.status.value,
-                "files_changed": diff_stats["files_changed"],
-                "lines_changed": diff_stats["lines_changed"],
+                "files_changed": files_changed,
+                "lines_changed": lines_changed,
                 "request_count": agent.request_count,
                 "diff_check": diff_check,
             })
@@ -251,8 +306,8 @@ class AgentManager:
                 "agent_id": agent_id,
                 "status": agent.status.value,
                 "agent_requests": agent.request_count,
-                "files_changed": diff_stats["files_changed"],
-                "lines_changed": diff_stats["lines_changed"],
+                "files_changed": files_changed,
+                "lines_changed": lines_changed,
                 "exit_code": return_code,
             })
 
@@ -260,6 +315,9 @@ class AgentManager:
                   agent_id=agent_id, task_id=agent.task_id,
                   exit_code=return_code,
                   duration_s=round((agent.completed_at - (agent.started_at or 0)), 1))
+
+        # Final diff stats broadcast BEFORE release/rollback
+        self._broadcast_diff_stats(ws_name)
 
         # Release workspace
         self.workspace_mgr.release(ws_name)

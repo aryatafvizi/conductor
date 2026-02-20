@@ -15,14 +15,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import db
+import task_manager as tm
 from logger import (
-    get_session_log, log_event, search_logs, setup_system_logger,
+    get_session_log,
+    search_logs,
+    setup_system_logger,
     tail_system_log,
 )
-from models import TaskPriority, TaskStatus
-import task_manager as tm
+from models import AgentStatus, TaskStatus
 from workspace_manager import WorkspaceManager
-
 
 CONFIG_DIR = Path.home() / ".conductor"
 PID_FILE = CONFIG_DIR / "server.pid"
@@ -90,7 +91,7 @@ def main() -> None:
     p_batch = sub.add_parser("batch", help="Run command across workspaces")
     p_batch.add_argument("batch_cmd", help="Command to run")
     p_batch.add_argument("--all", action="store_true")
-    p_batch.add_argument("--workspaces", type=str, help="Comma-separated IDs, e.g. 1,2,3")
+    p_batch.add_argument("--workspaces", type=str, help="Comma-separated workspace names")
 
     # ── logs ────────────────────────────────────────────────────────────
     p_logs = sub.add_parser("logs", help="View logs")
@@ -168,7 +169,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     port = args.port
     print(f"🎼 Starting Conductor on port {port}...")
     print(f"   Dashboard: http://localhost:{port}")
-    print(f"   Press Ctrl+C to stop\n")
+    print("   Press Ctrl+C to stop\n")
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -244,7 +245,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
             if "error" in result:
                 print(f"⚠️  {result['error']}")
                 continue
-            print(f"\n✅ Plan approved!")
+            print("\n✅ Plan approved!")
             print(f"   Task ID: {result.get('task_id')}")
             print(f"   PR Lifecycle ID: {result.get('pr_lifecycle_id')}")
             return
@@ -279,7 +280,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("📭 No tasks found.")
         return
 
-    STATUS_ICONS = {
+    status_icons = {
         "pending": "⏳", "blocked": "🚫", "ready": "🟢",
         "running": "🏃", "done": "✅", "failed": "❌", "cancelled": "⛔",
     }
@@ -287,7 +288,7 @@ def cmd_list(args: argparse.Namespace) -> None:
     print(f"{'ID':>4}  {'Status':<10}  {'Priority':<10}  {'Title'}")
     print("─" * 70)
     for t in tasks:
-        icon = STATUS_ICONS.get(t.status.value, "❓")
+        icon = status_icons.get(t.status.value, "❓")
         print(f"{t.id:>4}  {icon} {t.status.value:<8}  {t.priority.value:<10}  {t.title}")
 
 
@@ -330,7 +331,6 @@ def cmd_agents() -> None:
 
     print(f"{'ID':<16}  {'Task':>6}  {'Workspace':<16}  {'Status':<10}  {'Requests'}")
     print("─" * 70)
-    from models import AgentStatus
     for a in running:
         print(f"{a.id:<16}  #{a.task_id:>5}  {a.workspace:<16}  {a.status.value:<10}  {a.request_count}")
 
@@ -368,7 +368,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
     ws_mgr = WorkspaceManager()
 
     if args.workspaces:
-        names = [f"workspace-{n}" for n in args.workspaces.split(",")]
+        names = [n.strip() for n in args.workspaces.split(",")]
     else:
         names = list(ws_mgr.workspaces.keys())
 
@@ -393,7 +393,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
             if result.returncode != 0 and result.stderr:
                 print(f"   ❌ {result.stderr.strip()}")
         except subprocess.TimeoutExpired:
-            print(f"   ⏱️  Timed out")
+            print("   ⏱️  Timed out")
         except Exception as e:
             print(f"   ❌ {e}")
 
@@ -434,25 +434,25 @@ def cmd_logs(args: argparse.Namespace) -> None:
         print("📭 No log entries found.")
         return
 
-    LEVEL_COLORS = {
+    level_colors = {
         "INFO": "\033[36m",   # Cyan
         "WARN": "\033[33m",   # Yellow
         "ERROR": "\033[31m",  # Red
         "DEBUG": "\033[90m",  # Gray
     }
-    RESET = "\033[0m"
+    reset = "\033[0m"
 
     for entry in entries:
         if isinstance(entry, dict):
             level = entry.get("level", "INFO")
-            color = LEVEL_COLORS.get(level, "")
+            color = level_colors.get(level, "")
             ts = entry.get("ts", "")[:19]
             comp = entry.get("component", "")
             event = entry.get("event", "")
             extra = {k: v for k, v in entry.items()
                      if k not in ("ts", "level", "component", "event")}
             extra_str = f" {json.dumps(extra)}" if extra else ""
-            print(f"{color}{ts} [{level}] {comp}: {event}{extra_str}{RESET}")
+            print(f"{color}{ts} [{level}] {comp}: {event}{extra_str}{reset}")
         else:
             print(entry)
 
@@ -493,8 +493,9 @@ def cmd_rules(args: argparse.Namespace) -> None:
 def cmd_watch(args: argparse.Namespace) -> None:
     print("🔍 GitHub poll (one-shot)...")
     import asyncio
-    from github_monitor import GitHubMonitor
+
     import yaml
+    from github_monitor import GitHubMonitor
     config = {}
     config_file = CONFIG_DIR / "config.yaml"
     if config_file.exists():

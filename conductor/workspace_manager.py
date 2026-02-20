@@ -141,26 +141,69 @@ class WorkspaceManager:
             return ""
 
     def get_diff_stats(self, workspace_name: str) -> dict:
-        """Get diff statistics for the workspace."""
+        """Get per-file diff statistics for the workspace."""
         ws = self.workspaces[workspace_name]
         try:
-            diff = _run_git(ws.path, "diff", "--stat", "HEAD")
-            diff_full = _run_git(ws.path, "diff", "HEAD")
-            files_changed = len([
-                l for l in diff.strip().split("\n")
-                if l and not l.startswith(" ")
-            ]) - 1  # Exclude summary line
-            lines_changed = sum(
-                1 for l in diff_full.split("\n")
-                if l.startswith("+") or l.startswith("-")
+            # Tracked file changes (staged + unstaged)
+            numstat = _run_git(ws.path, "diff", "--numstat", "HEAD")
+            files = []
+            total_added = 0
+            total_removed = 0
+            for line in numstat.strip().split("\n"):
+                if not line.strip():
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 3:
+                    continue
+                added = int(parts[0]) if parts[0] != "-" else 0
+                removed = int(parts[1]) if parts[1] != "-" else 0
+                filepath = parts[2]
+                files.append({
+                    "file": filepath,
+                    "added": added,
+                    "removed": removed,
+                    "status": "modified",
+                })
+                total_added += added
+                total_removed += removed
+
+            # New untracked files
+            untracked = _run_git(
+                ws.path, "ls-files", "--others", "--exclude-standard"
             )
+            for line in untracked.strip().split("\n"):
+                if not line.strip():
+                    continue
+                # Count lines in new file
+                filepath = os.path.join(ws.path, line.strip())
+                try:
+                    with open(filepath) as f:
+                        line_count = sum(1 for _ in f)
+                except Exception:
+                    line_count = 0
+                files.append({
+                    "file": line.strip(),
+                    "added": line_count,
+                    "removed": 0,
+                    "status": "new",
+                })
+                total_added += line_count
+
             return {
-                "files_changed": max(0, files_changed),
-                "lines_changed": lines_changed,
-                "diff": diff_full,
+                "workspace": workspace_name,
+                "files": files,
+                "total_files": len(files),
+                "total_added": total_added,
+                "total_removed": total_removed,
             }
         except subprocess.CalledProcessError:
-            return {"files_changed": 0, "lines_changed": 0, "diff": ""}
+            return {
+                "workspace": workspace_name,
+                "files": [],
+                "total_files": 0,
+                "total_added": 0,
+                "total_removed": 0,
+            }
 
     def health_check(self, workspace_name: str) -> dict:
         """Get workspace health status."""
